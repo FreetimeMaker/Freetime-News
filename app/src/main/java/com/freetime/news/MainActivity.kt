@@ -1,6 +1,8 @@
 package com.freetime.news
 
 import android.os.Bundle
+import android.text.method.LinkMovementMethod
+import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -26,11 +28,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.freetime.news.ui.theme.FreetimeNewsTheme
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import io.noties.markwon.Markwon
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.text.DateFormat
@@ -177,21 +182,24 @@ private fun PostDetailScreen(
                 modifier = Modifier.padding(top = 16.dp)
             )
             post == null -> CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(top = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                item {
-                    Text(post!!.title, style = MaterialTheme.typography.headlineMedium)
-                }
-                if (post!!.releaseTimestamp > 0) {
-                    item { Text(formatTimestamp(post!!.releaseTimestamp)) }
-                }
-                if (post!!.categories.isNotEmpty()) {
-                    item { Text(post!!.categories.joinToString(" • ")) }
-                }
-                item {
-                    MarkdownContent(post!!.markdown)
+            else -> {
+                val article = post!!
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Text(article.title, style = MaterialTheme.typography.headlineMedium)
+                    }
+                    if (article.releaseTimestamp > 0) {
+                        item { Text(formatTimestamp(article.releaseTimestamp)) }
+                    }
+                    if (article.categories.isNotEmpty()) {
+                        item { Text(article.categories.joinToString(" • ")) }
+                    }
+                    item {
+                        MarkdownContent(prepareArticleMarkdown(article.markdown))
+                    }
                 }
             }
         }
@@ -200,31 +208,44 @@ private fun PostDetailScreen(
 
 @Composable
 private fun MarkdownContent(markdown: String) {
-    // Lightweight native renderer: no WebView. It handles the common Markdown
-    // used by MD-Blog while keeping the raw content supplied by the shared API.
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        markdown.lines().forEach { rawLine ->
-            val line = rawLine.trimEnd()
-            when {
-                line.isBlank() -> Unit
-                line.startsWith("### ") -> Text(line.removePrefix("### "), style = MaterialTheme.typography.titleMedium)
-                line.startsWith("## ") -> Text(line.removePrefix("## "), style = MaterialTheme.typography.titleLarge)
-                line.startsWith("# ") -> Text(line.removePrefix("# "), style = MaterialTheme.typography.headlineSmall)
-                line.startsWith("- ") || line.startsWith("* ") -> Text("• ${line.drop(2)}")
-                else -> Text(cleanInlineMarkdown(line), style = MaterialTheme.typography.bodyLarge)
+    val textColor = MaterialTheme.colorScheme.onBackground.toArgb()
+    val linkColor = MaterialTheme.colorScheme.primary.toArgb()
+
+    AndroidView(
+        modifier = Modifier.fillMaxWidth(),
+        factory = { context ->
+            TextView(context).apply {
+                setTextColor(textColor)
+                setLinkTextColor(linkColor)
+                textSize = 17f
+                movementMethod = LinkMovementMethod.getInstance()
+                linksClickable = true
+                setLineSpacing(0f, 1.12f)
             }
+        },
+        update = { textView ->
+            textView.setTextColor(textColor)
+            textView.setLinkTextColor(linkColor)
+            val markwon = Markwon.create(textView.context)
+            markwon.setMarkdown(textView, markdown)
         }
-    }
+    )
 }
 
-private fun cleanInlineMarkdown(value: String): String = value
-    .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
-    .replace(Regex("__(.+?)__"), "$1")
-    .replace(Regex("`(.+?)`"), "$1")
-    .replace(Regex("\\[(.+?)]\\((.+?)\\)"), "$1")
-    .replace(Regex("<t:(\\d+)(?::[tTdDfFR])?>")) { match ->
-        formatTimestamp(match.groupValues[1].toLong())
-    }
+private fun prepareArticleMarkdown(markdown: String): String {
+    return markdown
+        .lineSequence()
+        .filterNot { line ->
+            line.matches(Regex("^#\\s+.+$")) ||
+                line.contains("Released on", ignoreCase = true) ||
+                line.contains("Categories:", ignoreCase = true)
+        }
+        .joinToString("\n")
+        .replace(Regex("<t:(\\d+)(?::[tTdDfFR])?>")) { match ->
+            formatTimestamp(match.groupValues[1].toLong())
+        }
+        .trim()
+}
 
 private fun formatTimestamp(unixSeconds: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
