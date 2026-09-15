@@ -18,6 +18,11 @@ data class BlogPostsResponse(
 )
 
 @JsonClass(generateAdapter = true)
+data class BlogCategoriesResponse(
+    val categories: List<String> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
 data class BlogPost(
     val slug: String,
     val title: String,
@@ -29,6 +34,9 @@ data class BlogPost(
 interface BlogApi {
     @GET("v2/blog/posts")
     suspend fun getPosts(): BlogPostsResponse
+
+    @GET("v2/blog/categories")
+    suspend fun getCategories(): BlogCategoriesResponse
 
     @GET("v2/blog/posts/{slug}")
     suspend fun getPost(@Path("slug") slug: String): BlogPost
