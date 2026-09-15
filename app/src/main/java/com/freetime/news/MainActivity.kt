@@ -4,14 +4,49 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import com.freetime.news.ui.theme.FreetimeNewsTheme
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import retrofit2.Retrofit
+import retrofit2.converter.moshi.MoshiConverterFactory
+import java.text.DateFormat
+import java.util.Date
+
+private val blogApi: BlogApi by lazy {
+    val moshi = Moshi.Builder()
+        .add(KotlinJsonAdapterFactory())
+        .build()
+
+    Retrofit.Builder()
+        .baseUrl("https://api.free-time.me/")
+        .addConverterFactory(MoshiConverterFactory.create(moshi))
+        .build()
+        .create(BlogApi::class.java)
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -19,11 +54,94 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             FreetimeNewsTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
+                FreetimeNewsApp()
+            }
+        }
+    }
+}
+
+@Composable
+private fun FreetimeNewsApp() {
+    var selectedSlug by remember { mutableStateOf<String?>(null) }
+
+    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+        if (selectedSlug == null) {
+            PostListScreen(
+                modifier = Modifier.padding(innerPadding),
+                onPostClick = { selectedSlug = it }
+            )
+        } else {
+            PostDetailScreen(
+                slug = selectedSlug!!,
+                modifier = Modifier.padding(innerPadding),
+                onBack = { selectedSlug = null }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PostListScreen(
+    modifier: Modifier = Modifier,
+    onPostClick: (String) -> Unit
+) {
+    var posts by remember { mutableStateOf<List<BlogPostSummary>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var reloadKey by remember { mutableStateOf(0) }
+
+    LaunchedEffect(reloadKey) {
+        loading = true
+        error = null
+        try {
+            posts = blogApi.getPosts().posts
+        } catch (e: Exception) {
+            error = e.message ?: "Could not load news."
+        } finally {
+            loading = false
+        }
+    }
+
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+        Text(
+            text = "Freetime News",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        when {
+            loading -> CircularProgressIndicator()
+            error != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(error!!, color = MaterialTheme.colorScheme.error)
+                Button(onClick = { reloadKey++ }) { Text("Retry") }
+            }
+            posts.isEmpty() -> Text("No news available.")
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(posts, key = { it.slug }) { post ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPostClick(post.slug) }
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(post.title, style = MaterialTheme.typography.titleLarge)
+                            if (post.releaseTimestamp > 0) {
+                                Text(
+                                    formatTimestamp(post.releaseTimestamp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                            if (post.categories.isNotEmpty()) {
+                                Text(
+                                    post.categories.joinToString(" • "),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -31,17 +149,83 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
+private fun PostDetailScreen(
+    slug: String,
+    modifier: Modifier = Modifier,
+    onBack: () -> Unit
+) {
+    var post by remember(slug) { mutableStateOf<BlogPost?>(null) }
+    var error by remember(slug) { mutableStateOf<String?>(null) }
 
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    FreetimeNewsTheme {
-        Greeting("Android")
+    LaunchedEffect(slug) {
+        try {
+            post = blogApi.getPost(slug)
+        } catch (e: Exception) {
+            error = e.message ?: "Could not load this article."
+        }
+    }
+
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onBack) { Text("Back") }
+        }
+
+        when {
+            error != null -> Text(
+                error!!,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+            post == null -> CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(top = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Text(post!!.title, style = MaterialTheme.typography.headlineMedium)
+                }
+                if (post!!.releaseTimestamp > 0) {
+                    item { Text(formatTimestamp(post!!.releaseTimestamp)) }
+                }
+                if (post!!.categories.isNotEmpty()) {
+                    item { Text(post!!.categories.joinToString(" • ")) }
+                }
+                item {
+                    MarkdownContent(post!!.markdown)
+                }
+            }
+        }
     }
 }
+
+@Composable
+private fun MarkdownContent(markdown: String) {
+    // Lightweight native renderer: no WebView. It handles the common Markdown
+    // used by MD-Blog while keeping the raw content supplied by the shared API.
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        markdown.lines().forEach { rawLine ->
+            val line = rawLine.trimEnd()
+            when {
+                line.isBlank() -> Unit
+                line.startsWith("### ") -> Text(line.removePrefix("### "), style = MaterialTheme.typography.titleMedium)
+                line.startsWith("## ") -> Text(line.removePrefix("## "), style = MaterialTheme.typography.titleLarge)
+                line.startsWith("# ") -> Text(line.removePrefix("# "), style = MaterialTheme.typography.headlineSmall)
+                line.startsWith("- ") || line.startsWith("* ") -> Text("• ${line.drop(2)}")
+                else -> Text(cleanInlineMarkdown(line), style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+    }
+}
+
+private fun cleanInlineMarkdown(value: String): String = value
+    .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
+    .replace(Regex("__(.+?)__"), "$1")
+    .replace(Regex("`(.+?)`"), "$1")
+    .replace(Regex("\\[(.+?)]\\((.+?)\\)"), "$1")
+    .replace(Regex("<t:(\\d+)(?::[tTdDfFR])?>")) { match ->
+        formatTimestamp(match.groupValues[1].toLong())
+    }
+
+private fun formatTimestamp(unixSeconds: Long): String =
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+        .format(Date(unixSeconds * 1000))
