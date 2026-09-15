@@ -48,6 +48,7 @@ dependencies {
     implementation(libs.converter.moshi)
     implementation(libs.moshi.kotlin)
     implementation(libs.retrofit)
+    implementation(libs.markwon.core)
 
     testImplementation(libs.androidx.core)
     testImplementation(libs.androidx.junit)
