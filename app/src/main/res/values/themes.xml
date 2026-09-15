@@ -1,0 +1,4 @@
+<resources>
+
+    <style name="Theme.FreetimeNews" parent="Theme.MaterialComponents.Light" />
+</resources>
