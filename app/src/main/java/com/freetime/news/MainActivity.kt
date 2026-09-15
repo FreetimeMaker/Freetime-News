@@ -7,17 +7,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -91,6 +94,8 @@ private fun PostListScreen(
     onPostClick: (String) -> Unit
 ) {
     var posts by remember { mutableStateOf<List<BlogPostSummary>>(emptyList()) }
+    var categories by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedCategories by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
@@ -100,6 +105,7 @@ private fun PostListScreen(
         error = null
         try {
             posts = blogApi.getPosts().posts
+            categories = blogApi.getCategories().categories
         } catch (e: Exception) {
             error = e.message ?: "Could not load news."
         } finally {
@@ -107,23 +113,84 @@ private fun PostListScreen(
         }
     }
 
+    val filteredPosts = if (selectedCategories.isEmpty()) {
+        posts
+    } else {
+        posts.filter { post ->
+            selectedCategories.all { selected ->
+                post.categories.any { it.equals(selected, ignoreCase = true) }
+            }
+        }
+    }
+
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Text(
-            text = "Freetime News",
+            text = if (selectedCategories.isEmpty()) {
+                "Freetime News"
+            } else {
+                "Freetime News: ${selectedCategories.joinToString(" + ")}"
+            },
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 16.dp)
+            modifier = Modifier.padding(bottom = 12.dp)
         )
 
+        if (!loading && error == null && categories.isNotEmpty()) {
+            Text(
+                text = "Filter by:",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                categories.forEach { category ->
+                    val selected = selectedCategories.any { it.equals(category, ignoreCase = true) }
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            selectedCategories = if (selected) {
+                                selectedCategories.filterNot { it.equals(category, ignoreCase = true) }.toSet()
+                            } else {
+                                selectedCategories + category
+                            }
+                        },
+                        label = { Text(if (selected) "$category ✕" else category) }
+                    )
+                }
+                if (selectedCategories.isNotEmpty()) {
+                    Button(onClick = { selectedCategories = emptySet() }) {
+                        Text("Clear All")
+                    }
+                }
+            }
+        }
+
         when {
-            loading -> CircularProgressIndicator()
-            error != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            loading -> CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
+            error != null -> Column(
+                modifier = Modifier.padding(top = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(error!!, color = MaterialTheme.colorScheme.error)
                 Button(onClick = { reloadKey++ }) { Text("Retry") }
             }
-            posts.isEmpty() -> Text("No news available.")
-            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(posts, key = { it.slug }) { post ->
+            filteredPosts.isEmpty() -> Text(
+                text = if (selectedCategories.isEmpty()) {
+                    "No news available."
+                } else {
+                    "No posts found matching all selected categories: ${selectedCategories.joinToString(", ")}"
+                },
+                modifier = Modifier.padding(top = 16.dp)
+            )
+            else -> LazyColumn(
+                modifier = Modifier.padding(top = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(filteredPosts, key = { it.slug }) { post ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
