@@ -50,7 +50,6 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.markwon.core)
 
-    testImplementation(libs.androidx.core)
     testImplementation(libs.androidx.junit)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
