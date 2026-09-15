@@ -1,0 +1,12 @@
+Freetime News is a native Android app for reading news, release posts and updates from FreetimeMaker.
+
+Posts are loaded through the public FreetimeMaker API and displayed directly in the app using a native Jetpack Compose interface. The app does not use a WebView for article content.
+
+Features:
+* Browse FreetimeMaker news and release posts
+* Read Markdown-based articles natively
+* View article categories
+* View release dates in the device's local date and time format
+* Lightweight interface built with Jetpack Compose
+
+An internet connection is required to retrieve the latest posts.
