@@ -1,0 +1,6 @@
+Initial release of Freetime News.
+
+* Browse posts from the shared FreetimeMaker blog API
+* Open and read articles natively without a WebView
+* Display release dates and categories
+* Added loading, empty and error states
